@@ -1,0 +1,372 @@
+---
+title: "NYPD Shooting Incident Data Analysis"
+author: "Y"
+date: "2025-07-25"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+
+
+This dataset provides a comprehensive overview of every shooting incident that has taken place in New York City from 2013 through the end of the previous calendar year. The data is manually extracted on a quarterly basis and reviewed by the Office of Management Analysis and Planning before being published on the NYPD website. Each entry details a shooting incident, including information about the event, its location, and the time it occurred. Additionally, the dataset includes demographic information about both suspects and victims. This data serves as a valuable resource for the public to examine the patterns and nature of police enforcement activities.
+
+A summary of the descriptive data can be found as below. 
+
+- **INCIDENT_KEY**: Randomly generated persistent ID for each incident
+- **OCCUR_DATE**: Exact date of the shooting incident
+- **OCCUR_TIME**: Exact time of the shooting incident
+- **BORO**: Borough where the shooting incident occurred
+- **PRECINCT**: Precinct where the shooting incident occurred
+- **JURISDICTION_CODE**: Jurisdiction where the shooting incident occurred. Jurisdiction codes 0(Patrol), 1(Transit), and 2(Housing) represent NYPD, while codes 3 and more represent non-NYPD jurisdictions
+- **LOCATION_DESC**: Location of the shooting incident
+- **STATISTICAL_MURDER_FLAG**: Shooting resulted in the victim’s death which would be counted as a murder
+- **PERP_AGE_GROUP**: Perpetrator’s age within a category
+- **PERP_SEX**: Perpetrator’s sex description
+- **PERP_RACE**: Perpetrator’s race description
+- **VIC_AGE_GROUP**: Victim’s age within a category
+- **VIC_SEX**: Victim’s sex description
+- **VIC_RACE**: Victim’s race description
+- **X_COORD_CD**: Midblock X-coordinate for New York State Plane Coordinate System, Long Island Zone, NAD 83, units feet (FIPS 3104)
+- **Y_COORD_CD**: Midblock Y-coordinate for New York State Plane Coordinate System, Long Island Zone, NAD 83, units feet (FIPS 3104)
+
+
+
+
+## Import the required packages 
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(gridExtra)
+```
+
+## Load the data
+```{r}
+df = read_csv("https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD")
+```
+
+
+## Data Preparation
+
+
+
+To simplify the dataset and improve focus on the most important features, the following unnecessary columns were be eliminated: LOC_CLASSFCTN_DESC, LOCATION_DESC, X_COORD_CD, Y_COORD_CD, Lon_Lat
+
+
+
+```{r}
+
+df_2 = df %>% select(INCIDENT_KEY,
+                   OCCUR_DATE,
+                   OCCUR_TIME,
+                   BORO,
+                   LOC_OF_OCCUR_DESC,
+                   PRECINCT,
+                   JURISDICTION_CODE,
+                   STATISTICAL_MURDER_FLAG,
+                   PERP_AGE_GROUP,
+                   PERP_SEX,
+                   PERP_RACE,
+                   VIC_AGE_GROUP,
+                   VIC_SEX,
+                   VIC_RACE,
+                   Latitude,
+                   Longitude)
+
+```
+
+
+
+### Handling Missing Values
+In the next step, we count the number of missing values for each variable. For Missing Values: Handled by replacing with "UNKNOWN" for perpetrator-related variables (age, sex, race) and location description.
+Outliers: Removed implausible age groups (e.g., "1020", "2021").
+Transformations:Created Days variable from OCCUR_DATE (Monday-Sunday), Created Hours variable from OCCUR_TIME (24-hour format), Final Dataset: 14,242 observations with 18 variables.
+```{r}
+# Return the column name along with the missing values
+lapply(df_2, function(x) sum(is.na(x)))
+
+
+```
+
+```{r}
+# Plot the distribution of variables with missing values
+
+
+# Plot 1: LOC_OF_OCCUR_DESC
+plot1 <- ggplot(df, aes(x = LOC_OF_OCCUR_DESC)) + 
+  geom_bar() +
+  ggtitle("Location of Occurrence Description")
+
+# Plot 2: JURISDICTION_CODE
+plot2 <- ggplot(df, aes(x = JURISDICTION_CODE)) + 
+  geom_bar() +
+  ggtitle("Jurisdiction Code")
+
+# Plot 3: PERP_AGE_GROUP
+plot3 <- ggplot(df, aes(x = PERP_AGE_GROUP)) + 
+  geom_bar() +
+  ggtitle("Perpetrator Age Group")
+
+# Plot 4: PERP_SEX
+plot4 <- ggplot(df, aes(x = PERP_SEX)) + 
+  geom_bar() +
+  ggtitle("Perpetrator Sex")
+
+# Plot 5: PERP_RACE
+plot5 <- ggplot(df, aes(x = PERP_RACE)) + 
+  geom_bar() +
+  ggtitle("Perpetrator Race")
+
+# Display each plot one by one
+print(plot1)
+print(plot2)
+print(plot3)
+print(plot4)
+print(plot5)
+
+
+summary(df_2)
+```
+
+
+There are noticeble missing values for LOC_OF_OCCUR_DESC, PERP_AGE_GROUP, PERP_SEX and 
+PERP_RACE, those cases are possibly still active and ongoing investigation. In fear of missing meaningful information, I handle this group of missing data by calling them as another group of “UNKNOWN”. Since the number NAs in JURISDICTION_CODE, Latitude and Longitude are relatively small, those rows with NA were filtered out. 
+
+```{r}
+# Deal with missing values
+# Deal with missing values and '(null)' entries
+df_2 <- df_2 %>%
+  mutate(across(c(LOC_OF_OCCUR_DESC, PERP_AGE_GROUP, PERP_SEX, PERP_RACE), 
+                ~ replace_na(ifelse(. == "(null)", "UNKNOWN", .), "UNKNOWN")))
+
+
+
+
+df_3 <- df_2 %>%
+  filter(complete.cases(JURISDICTION_CODE, Latitude, Longitude))
+
+```
+### Handling Extreme Values
+
+
+```{r}
+age_group_counts <- df_2 %>%
+  group_by(PERP_AGE_GROUP) %>%
+  summarise(Count = n()) %>%
+  arrange(desc(Count))  # Optional: arrange by count in descending order
+
+# Display the result
+print(age_group_counts)
+
+```
+
+Then we remove extreme values that fall outside the normal age group.
+
+
+```{r}
+df_4 = subset(df_3, !(PERP_AGE_GROUP %in% c("1020", "1028", "2021", "224", "940")))
+
+```
+
+### Transform Data
+
+To facilitate data visualization and modeling in the next steps, we will convert the OCCUR_DATE to represent days of the week (Monday to Sunday) and the OCCUR_TIME to a 24-hour format.
+
+
+```{r}
+OCCUR_DATE <- as.Date(df_4$OCCUR_DATE, format = "%m/%d/%Y")
+df_4$Days <- weekdays(OCCUR_DATE)
+
+# Extract hours from OCCUR_TIME
+df_4$Hours <- as.numeric(format(as.POSIXct(df_4$OCCUR_TIME, format = "%H:%M:%S"), "%H"))
+
+```
+
+
+
+## Data Visualization
+
+
+
+
+Brooklyn ranks first in the number of incidents, followed by the Bronx and Queens. Additionally, the trend for murder cases aligns closely with that of non-murder incidents.
+
+
+
+```{r}
+
+
+# Create a summary data frame with counts
+df_counts <- df_2 %>%
+  group_by(BORO, STATISTICAL_MURDER_FLAG) %>%
+  summarise(count = n(), .groups = 'drop')
+
+# Create the plot
+g <- ggplot(df_counts, aes(x = BORO, y = count, fill = STATISTICAL_MURDER_FLAG)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_text(aes(label = count), position = position_dodge(width = 0.9), vjust = -0.5) +
+  labs(title = "Boroughs of New York City with Murder Flag",
+       x = "Boroughs of New York City",
+       y = "Count of Incidents") +
+  theme_minimal() +
+  scale_fill_discrete(name = "Murder Flag")
+
+print(g)
+
+
+```
+
+
+```{r}
+# Calculate proportions
+boro_counts <- df_4 %>%
+  group_by(BORO) %>%
+  summarise(Total = n()) %>%
+  mutate(Proportion = Total / sum(Total))
+
+# Create plot
+ggplot(boro_counts, aes(x = reorder(BORO, -Proportion), y = Proportion, fill = BORO)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = scales::percent(Proportion, accuracy = 0.1)), 
+            vjust = -0.5, size = 3.5) +
+  labs(title = "Shooting Incident Distribution by Borough",
+       x = "Borough",
+       y = "Proportion of Total Incidents") +
+  scale_y_continuous(labels = scales::percent) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+Analysis the incident Distribution by Borough, we can see the Brooklyn accounts for 38.7% of all shooting incidents, followed by the Bronx (31.1%) and Queens (19.6%). This distribution correlates with population density and socioeconomic factors in these boroughs.
+
+
+```{r}
+
+
+# Create a summary data frame with counts
+df_counts <- df_2 %>%
+  group_by(VIC_SEX, STATISTICAL_MURDER_FLAG) %>%
+  summarise(count = n(), .groups = 'drop')
+
+# Create the plot
+g2 <- ggplot(df_counts, aes(x = VIC_SEX, y = count, fill = STATISTICAL_MURDER_FLAG)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_text(aes(label = count), position = position_dodge(width = 0.9), vjust = -0.5) +
+  labs(title = "Victim’s sex with Murder Flag",
+       x = "Victim’s sex",
+       y = "Count of Incidents") +
+  theme_minimal() +
+  scale_fill_discrete(name = "Murder Flag")
+
+print(g2)
+
+
+```
+
+>ggplot(df_tidy, aes(x=Time, y=Ratio)) + geom_line(aes(color=Cell))
+
+
+```{r}
+
+# Group and summarize the data
+df_counts <- df_4 %>%
+  group_by(Hours, PERP_RACE) %>%
+  summarise(count = n(), .groups = 'drop')
+
+# Create the line plot
+ggplot(df_counts, aes(x = Hours, y = count, color = PERP_RACE)) +
+  geom_line() +
+  labs(title = "Shooting Counts by Hour and Perpetrator Race",
+       x = "Hour",
+       y = "Count") +
+  theme_minimal()
+
+
+```
+
+
+```{r}
+# Create time categories
+df_4 <- df_4 %>%
+  mutate(Time_Category = case_when(
+    Hours >= 5 & Hours < 12 ~ "Morning (5AM-11AM)",
+    Hours >= 12 & Hours < 17 ~ "Afternoon (12PM-4PM)",
+    Hours >= 17 & Hours < 21 ~ "Evening (5PM-8PM)",
+    TRUE ~ "Night (9PM-4AM)"
+  ))
+
+# Plot distribution
+ggplot(df_4, aes(x = Time_Category, fill = VIC_AGE_GROUP)) +
+  geom_bar(position = "fill") +
+  labs(title = "Shooting Distribution by Time of Day and Victim Age",
+       x = "Time of Day",
+       y = "Proportion",
+       fill = "Victim Age Group") +
+  scale_y_continuous(labels = scales::percent) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+
+Analysis the Temporal Patterns by Hour and Victim Age and we can see the Younger victims (18-24) are disproportionately affected during evening hours (5PM-8PM), the Middle-aged victims (25-44) show consistent representation across all time periods. Night hours show the most uniform age distribution of victims.
+
+
+
+
+
+
+```{r}
+
+
+df_counts <- df_4 %>%
+  group_by(Days, PERP_RACE) %>%
+  summarise(count = n(), .groups = 'drop')
+
+ggplot(df_counts, aes(x = Days, y = count, color = PERP_RACE, group = PERP_RACE)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Shooting Counts by Days and Perpetrator Race",
+       x = "Days",
+       y = "Count") +
+  theme_minimal()
+
+
+```
+
+
+
+```{r}
+# Prepare data for modeling
+model_data <- df_4 %>%
+  mutate(Murder_Flag = as.factor(ifelse(STATISTICAL_MURDER_FLAG == "TRUE", 1, 0)),
+         VIC_AGE_GROUP = relevel(factor(VIC_AGE_GROUP), ref = "25-44"),
+         PERP_AGE_GROUP = relevel(factor(PERP_AGE_GROUP), ref = "25-44"),
+         Time_Category = relevel(factor(Time_Category), ref = "Afternoon (12PM-4PM)")) %>%
+  select(Murder_Flag, VIC_AGE_GROUP, PERP_AGE_GROUP, BORO, Time_Category)
+
+# Build model
+murder_model <- glm(Murder_Flag ~ ., data = model_data, family = "binomial")
+
+# Model summary
+summary(murder_model)
+
+# Calculate odds ratios
+odds_ratios <- exp(coef(murder_model))
+odds_ratios
+```
+The Predictive Model (Logistic Regression for Murder Outcome). We have the following important findings. 1. We find the Victim Age Significantly Impacts Fatality Odds, the Younger victims (0–17, 18–24) have lower odds of fatal outcomes compared to the baseline (25–44), and the Older victims (65+) have 42% higher odds of death.Middle-aged victims (45–64) show a non-significant trend toward higher fatality (*p* = 0.072). Younger victims may receive quicker medical intervention or suffer less lethal injuries. Elderly victims may have higher mortality due to reduced resilience. 2. We find the Perpetrator Age Also Influences Outcomes. Shootings involving younger perpetrators are less likely to be fatal (<18 and 18–24, both *p* < 0.001). Perpetrators aged 45–64 increase fatality odds by 34%. Interpretation: Younger perpetrators may use less lethal methods or target non-vital areas. Middle-aged offenders may employ more lethal force. 3. Geographic and Temporal Effects have big Borough Differences. Manhattan has 13% lower odds of fatal shootings vs. Bronx. Morning shootings (5AM–11AM) are 32% more deadly than afternoon incidents. Evening/night effects were not statistically significant Interpretation: Morning shootings may involve more premeditated violence (e.g., targeted attacks) and Manhattan’s lower fatality rate could reflect better emergency response or different crime patterns. This analysis provides a foundation for targeted interventions, such as: 1. Enhanced trauma care in high-risk boroughs (Bronx, Brooklyn).2. Focused policing during morning hours.3. Community programs for middle-aged perpetrators
+
+
+## Bias Identification
+
+From data visualisation part, we found that the number of shooting incidents are corrected to boroughs. However, different boroughs have varying population densities, racial compositions, and age distributions. These factors can influence the number of shooting incidents. Several potential biases in the data collection and analysis may affect the interpretation of shooting incident patterns. Underreporting bias is evident, as non-fatal shootings in low-income neighborhoods may be systematically underreported, and gang-related incidents frequently lack complete perpetrator information. Demographic bias is present in the dataset, with 87% of perpetrator race entries listed as "UNKNOWN," compared to only 2% for victims, suggesting an investigative focus on victim characteristics rather than suspect identification. Geographic bias arises from uneven NYPD jurisdiction coverage, where transit police data (JURISDICTION_CODE 1) may underrepresent subway-related incidents due to differing reporting protocols.
+
+A causation fallacy risk exists when interpreting borough-level correlations, as factors like poverty rates in the Bronx may confound the relationship between location and shooting outcomes. Similarly, time-of-day effects may be influenced by varying activity patterns rather than inherent differences in incident severity. Finally, age grouping bias obscures distinctions within the "18–24" category, which combines teenagers and young adults.
